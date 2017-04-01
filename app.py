@@ -140,7 +140,10 @@ class Country:
                                   'NLD', 'SWE']
 
     def process_data(self, result_json):
-        local_user = USERS[Login.last_id]
+        try:
+            local_user = USERS[Login.last_id]
+        except Exception:
+            raise falcon.HTTPBadRequest(description='Please login first')
         data_oryginal = deepcopy(local_user)
         for col in cols:
             if col in result_json:
