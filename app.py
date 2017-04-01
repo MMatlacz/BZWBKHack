@@ -1,15 +1,25 @@
 # coding=utf-8
 import json
 from copy import deepcopy
+from datetime import datetime, timedelta
+from functools import reduce
 
 import falcon
 import numpy as np
 import pandas as pd
+import requests
+from falcon_cors import CORS
 from sklearn.externals import joblib
+
+from data_provider import DataProvider
+from skyscanner_live_pricing import LivePricing
+
+cors = CORS(allow_origins_list=['*'])
+public_cors = CORS(allow_all_origins=True)
 
 encoders = joblib.load('./label_encoders.bin')
 
-app = falcon.API()
+app = falcon.API(middleware=[cors.middleware])
 
 categorical = ['STAN_CYW', 'WYKSZTALCENIE', 'TYP_DOCHODU', 'KRAJ']
 
@@ -72,6 +82,8 @@ cols = ['KLIENT_ID', 'STAN_CYW', 'WYKSZTALCENIE',
 
 
 class Mappings:
+    cors = public_cors
+
     def on_get(self, req, resp):
         resp.body = json.dumps({
             'STAN_CYWILNY': {
@@ -106,11 +118,14 @@ class Mappings:
 
 class Login:
     last_id = None
+    cors = public_cors
 
     def on_get(self, req, resp):
+        if not req.params:
+            raise falcon.HTTPBadRequest(
+                description='Please add user parameter')
         if req.params['user'] == 'user1':
             data = {k: v for k, v in USER.items() if k in cols}
-            print(encoders.keys())
             data = {
                 k: encoders[k].inverse_transform([int(v)])[
                     0] if k in encoders else v
@@ -118,7 +133,6 @@ class Login:
                 k, v in data.items()}
         else:
             data = {k: v for k, v in USER1.items() if k in cols}
-            print(encoders.keys())
             data = {
                 k: encoders[k].inverse_transform([int(v)])[
                     0] if k in encoders else v
@@ -129,6 +143,8 @@ class Login:
 
 
 class Country:
+    cors = public_cors
+
     def __init__(self):
         self.model = joblib.load('./kraje_clf.bin')
         self.ohencoder = joblib.load('./ohencoder.bin')
@@ -177,7 +193,7 @@ class Country:
 
         try:
             df = self.process_data(result_json)
-        except:
+        except Exception:
             df = self.process_data({})
 
         prediction = self.model.predict_proba(df)
@@ -190,6 +206,44 @@ class Country:
         })
 
 
+class Flights:
+    cors = public_cors
+
+    def get_flight(self, inbound):
+        outbound = 'Warszawa Chopina'
+
+        outbound_date = (datetime.today() + timedelta(days=1)).date()
+        inbound_date = (datetime.today() + timedelta(days=7)).date()
+
+        city = requests.get(
+            'https://restcountries.eu/rest/v2/alpha/{}'.format(
+                inbound)).json()['capital']
+
+        try:
+            cheapest = [LivePricing(
+                DataProvider.get_suggestions(outbound)[0]['code'].split(
+                    '-')[0],
+                DataProvider.get_suggestions(city)[0]['code'].split(
+                    '-')[0],
+                outbound_date,
+                inbound_date,
+                1).find_flights()]
+            cheapest[0]['city'] = city
+        except Exception:
+            cheapest = []
+
+        return cheapest
+
+    def on_get(self, req, resp):
+        result_json = req.params
+        countries = result_json['countries']
+
+        cheapest = reduce(lambda a, b: a + b, map(self.get_flight, countries))
+
+        resp.body = json.dumps({'cheapest': cheapest})
+
+
 app.add_route('/login', Login())
 app.add_route('/country', Country())
 app.add_route('/mappings', Mappings())
+app.add_route('/flights', Flights())
