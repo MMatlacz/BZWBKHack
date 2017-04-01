@@ -2,7 +2,6 @@
 import json
 from copy import deepcopy
 from datetime import datetime, timedelta
-from functools import reduce
 
 import falcon
 import numpy as np
@@ -13,6 +12,7 @@ from sklearn.externals import joblib
 
 from data_provider import DataProvider
 from skyscanner_live_pricing import LivePricing
+from weather import get_temp
 
 cors = CORS(allow_origins_list=['*'])
 public_cors = CORS(allow_all_origins=True)
@@ -64,16 +64,41 @@ USER1 = {'DOCHOD': 0.0,
          'LICZBA_TRANS_K_KRED': 10.726467113036628,
          'LICZBA_TRANS_RACH_BIEZ': 0.0,
          'LICZBA_WYPLAT_K_DEB_ATM': 0.0,
-         'POSIADA_NIERUCHOMOSC': 2.0,
+         'POSIADA_NIERUCHOMOSC': 1.0,
          'STAN_CYW': 0.0,
          'STAZ_KLIENT': 3821.0,
          'TYP_DOCHODU': 7.0,
          'WIEK': 34.0,
          'WYKSZTALCENIE': 5.0}
 
+USER2 = {'DOCHOD': 0.0,
+         'KLIENT_ID': 1003788.0,
+         'KRAJ': 0.0,
+         'KWOTA_TRANS_K_DEB': 1002.5156079872838,
+         'KWOTA_TRANS_K_KRED': 1042.2858979913351,
+         'KWOTA_TRANS_RACH_BIEZ': 19747.093683204283,
+         'KWOTA_y': 170.03000000000003,
+         'LICZBA_K_DEB': 0.0,
+         'LICZBA_OSOB_GOSP': 0.0,
+         'LICZBA_PLAT_K_DEB': 17.653486985893107,
+         'LICZBA_PROD_KRED': 0.0,
+         'LICZBA_PROD_OSZCZ': 0.0,
+         'LICZBA_RACH_BIEZ': 0.0,
+         'LICZBA_RACH_K_KRED': 0.0,
+         'LICZBA_TRANS_K_KRED': 10.726467113036628,
+         'LICZBA_TRANS_RACH_BIEZ': 39.110601280948281,
+         'LICZBA_WYPLAT_K_DEB_ATM': 3.090403337969402,
+         'POSIADA_NIERUCHOMOSC': 2.0,
+         'STAN_CYW': 3.0,
+         'STAZ_KLIENT': 4789.0,
+         'TYP_DOCHODU': 0.0,
+         'WIEK': 63.0,
+         'WYKSZTALCENIE': 4.0}
+
 USERS = {
-    USER['KLIENT_ID']: USER,
-    USER1['KLIENT_ID']: USER1
+    'user': USER,
+    'user1': USER1,
+    'user2': USER2
 }
 
 cols = ['KLIENT_ID', 'STAN_CYW', 'WYKSZTALCENIE',
@@ -83,6 +108,50 @@ cols = ['KLIENT_ID', 'STAN_CYW', 'WYKSZTALCENIE',
 
 class Mappings:
     cors = public_cors
+
+    mapping = {
+        'STAN_CYW': {
+            'W': 'PANNA/KAWALER',
+            'M': 'ZONATY/MEZATKA',
+            'R': 'ROZWIEDZIONY/ROZWIEDZIONA',
+            'U': 'WDOWA/WDOWIEC',
+            'S': 'SEPARACJA'
+        },
+        'WYKSZTALCENIE': {
+            'I': 'INNE',
+            'L': 'LICENCJAT',
+            'P': 'PODSTAWOWE',
+            'S': 'SREDNIE',
+            'W': 'WYZSZE',
+            'Z': 'ZAWODOWE',
+            'U': 'NIEZNANE'
+        },
+        'TYP_DOCHODU': {
+            0: 'INNE',
+            1: 'UMOWA O PRACE',
+            2: 'WLASNA DZIAŁALNOSC',
+            3: 'EMERYTURA',
+            4: 'RENTA',
+            5: 'STYPENDIUM',
+            6: 'RODZINA',
+            7: 'NAJEM LUB DZIERZAWA',
+            8: 'UMOWA O DZIELO/AGENCYJNA',
+            9: 'UMOWA ZLECENIE',
+            10: 'NIEZNANY'
+        },
+        'POSIADA_NIERUCHOMOSC': {
+            0: "NIE POSIADA",
+            1: "POSIADA",
+            2: "BRAK DANYCH"
+        }
+    }
+
+    @staticmethod
+    def convert(category, value):
+        try:
+            return Mappings.mapping[category][value]
+        except:
+            print(category, value)
 
     def on_get(self, req, resp):
         resp.body = json.dumps({
@@ -111,7 +180,8 @@ class Mappings:
                 6: 'RODZINA',
                 7: 'NAJEM LUB DZIERZAWA',
                 8: 'UMOWA O DZIELO/AGENCYJNA',
-                9: 'UMOWA ZLECENIE'
+                9: 'UMOWA ZLECENIE',
+                10: 'NIEZNANY'
             }
         })
 
@@ -124,21 +194,27 @@ class Login:
         if not req.params:
             raise falcon.HTTPBadRequest(
                 description='Please add user parameter')
-        if req.params['user'] == 'user1':
-            data = {k: v for k, v in USER.items() if k in cols}
-            data = {
-                k: encoders[k].inverse_transform([int(v)])[
-                    0] if k in encoders else v
-                for
-                k, v in data.items()}
-        else:
-            data = {k: v for k, v in USER1.items() if k in cols}
-            data = {
-                k: encoders[k].inverse_transform([int(v)])[
-                    0] if k in encoders else v
-                for
-                k, v in data.items()}
-        Login.last_id = data['KLIENT_ID']
+        user = USERS[req.params['user']]
+
+        data = {k: v for k, v in user.items() if k in cols}
+        data = {
+            k: encoders[k].inverse_transform([int(v)])[
+                0] if k in encoders else v
+            for
+            k, v in data.items()}
+
+        print(data)
+
+        random_user = requests.get('https://randomuser.me/api')
+        random_user = random_user.json()['results'][0]
+        data['name'] = '{} {}'.format(random_user['name']['first'],
+                                      random_user['name']['last'])
+        data['picture'] = random_user['picture']['medium']
+        data = {k: (Mappings.convert(k, v) if k in Mappings.mapping else  v)
+                for k, v in data.items()}
+
+        Login.last_id = req.params['user']
+        print(Login.last_id)
         resp.body = json.dumps(data)
 
 
@@ -182,8 +258,6 @@ class Country:
 
         df = self.ohencoder.transform(df)
 
-        print(df.shape)
-
         df = self.pca.transform(df)
 
         return df
@@ -209,36 +283,46 @@ class Country:
 class Flights:
     cors = public_cors
 
-    def get_flight(self, inbound):
+    def get_flight(self, inbound, cheapest):
         outbound = 'Warszawa Chopina'
 
         outbound_date = (datetime.today() + timedelta(days=1)).date()
         inbound_date = (datetime.today() + timedelta(days=7)).date()
 
-        city = requests.get(
+        country_info = requests.get(
             'https://restcountries.eu/rest/v2/alpha/{}'.format(
-                inbound)).json()['capital']
+                inbound)).json()
+
+        city = country_info['capital']
+        name = country_info['name']
 
         try:
-            cheapest = [LivePricing(
+            cheapest[name] = LivePricing(
                 DataProvider.get_suggestions(outbound)[0]['code'].split(
                     '-')[0],
                 DataProvider.get_suggestions(city)[0]['code'].split(
                     '-')[0],
                 outbound_date,
                 inbound_date,
-                1).find_flights()]
-            cheapest[0]['city'] = city
+                1).find_flights()
+            cheapest[name]['city'] = city
+            cheapest[name]['temp'] = get_temp(city)
         except Exception:
-            cheapest = []
+            print("Exception", name)
+            cheapest[name] = {}
 
         return cheapest
 
     def on_get(self, req, resp):
         result_json = req.params
         countries = result_json['countries']
+        if not isinstance(countries, list):
+            countries = countries.split(',')
+        print(countries)
 
-        cheapest = reduce(lambda a, b: a + b, map(self.get_flight, countries))
+        cheapest = {}
+        for c in countries:
+            cheapest = self.get_flight(c, cheapest)
 
         resp.body = json.dumps({'cheapest': cheapest})
 

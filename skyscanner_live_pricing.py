@@ -20,16 +20,16 @@ class LivePricing:
         url = 'http://partners.api.skyscanner.net/apiservices/pricing/v1.0'
         r = requests.post(url, data)
         while r.status_code == '204':
-            time.sleep(5)
+            time.sleep(1)
             r = requests.post(url, data)
         self.get_url = r.headers[
                            'Location'] + '?apiKey=' + skyscanner_token + '&pagesize=1'
 
     def _get_cheapest(self):
-        time.sleep(5)
+        # time.sleep(5)
         r = requests.get(self.get_url)
         while r.status_code == '204':
-            time.sleep(5)
+            time.sleep(1)
             r = requests.get(self.get_url)
         try:
             json_data = r.json()
@@ -113,18 +113,18 @@ class LivePricing:
         cheapest = self._parse_data(cheapest)
 
         for c in cheapest:
-            c['price'] = sorted(
-                c['PricingOptions'], key=lambda x: x['Price'])[0]
+            # c['price'] = sorted(
+            #     c['PricingOptions'], key=lambda x: x['Price'])[0]
+            c['price'] = c['PricingOptions'][0]
             del c['PricingOptions']
 
-        cheapest = sorted(cheapest, key=lambda x: x['price']['Price'])
+        # cheapest = sorted(cheapest, key=lambda x: x['price']['Price'])
         cheapest = cheapest[0]
-        new_cheapest = {}
-        new_cheapest['time'] = str(cheapest['OutboundDetails']['time'])
-        new_cheapest['duration'] = cheapest['OutboundDetails']['Duration']
-        new_cheapest['price'] = cheapest['price']['Price']
-        new_cheapest['agent_img'] = cheapest['price']['Agents'][0]
-        new_cheapest['link'] = cheapest['price']['DeeplinkUrl']
+        new_cheapest = {'time': str(cheapest['OutboundDetails']['time']),
+                        'duration': cheapest['OutboundDetails']['Duration'],
+                        'price': cheapest['price']['Price'],
+                        'agent_img': cheapest['price']['Agents'][0],
+                        'link': cheapest['price']['DeeplinkUrl']}
         del cheapest
         return new_cheapest
 

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import requests
 
-API_KEY = 'ma595491219569679758263226220714'
+API_KEY = '' # enter your api key
 
 
 class DataProvider:
@@ -113,15 +113,7 @@ class DataProvider:
         query = '?sortorder={}&apiKey={}'.format('asc', API_KEY)
         response = requests.get(session_url + query)
         while response.status_code == '204':
-            time.sleep(5)
+            time.sleep(1)
             response = requests.get(session_url + query)
         return response.json()
 
-
-if __name__ == '__main__':
-    dp = DataProvider('en-GB', 'EUR', 'CH',
-                      DataProvider.get_suggestions('Warszawa')[1]['code'],
-                      (datetime.today() + timedelta(days=2)).date(),
-                      (datetime.today() + timedelta(days=7)).date())
-    print(dp.get_propositions(
-        destination=DataProvider.get_suggestions('Zurych')[-1]['code']))
